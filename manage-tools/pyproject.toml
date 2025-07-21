@@ -1,0 +1,19 @@
+[project]
+name = "manage-tools"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.1",
+    "sqlite-vec>=0.1.6",
+    "torch>=2.7.1",
+    "transformers>=4.53.2",
+    "typer>=0.16.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-mock>=3.14.1",
+]
