@@ -106,6 +106,10 @@ ON documents_{tool_name} (tool_id);
 CREATE UNIQUE INDEX idx_documents_{tool_name}_path_hash
 ON documents_{tool_name} (tool_id, file_path, content_hash);
 
+-- tool_id + file_path検索用インデックス（update処理等で使用）
+CREATE INDEX idx_documents_{tool_name}_tool_path
+ON documents_{tool_name} (tool_id, file_path);
+
 -- 位置検索用インデックス
 CREATE INDEX idx_vectors_{tool_name}_position
 ON vectors_{tool_name} (document_id, start_position, end_position);
