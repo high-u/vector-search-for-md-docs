@@ -32,29 +32,18 @@ def tool_add(
     config_path: str = typer.Option("config.toml", "--config", help="Configuration file path")
 ):
     """Add a new tool"""
-    try:
-        deps = create_dependencies(config_path)
-        
-        with deps["db_conn"] as db_conn:
-            tool_id = add_tool(
-                db_conn=db_conn,
-                name=name,
-                description=description,
-                source_directory=source,
-                validate_directory=deps["validate_directory"]
-            )
-        
-        typer.echo(f"Tool '{name}' added successfully with ID: {tool_id}")
-        
-    except FileNotFoundError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-    except Exception as e:
-        typer.echo(f"Unexpected error: {e}", err=True)
-        raise typer.Exit(1)
+    deps = create_dependencies(config_path)
+    
+    with deps["db_conn"] as db_conn:
+        tool_id = add_tool(
+            db_conn=db_conn,
+            name=name,
+            description=description,
+            source_directory=source,
+            validate_directory=deps["validate_directory"]
+        )
+    
+    typer.echo(f"Tool '{name}' added successfully with ID: {tool_id}")
 
 
 if __name__ == "__main__":

@@ -4,10 +4,6 @@ import re
 
 from ...interfaces.database.connection import DatabaseConnection
 from ...interfaces.database.schema import create_tool_tables, drop_tool_tables
-from ..messages import (
-    TOOL_NAME_EMPTY, TOOL_NAME_INVALID_CHARS, TOOL_NAME_TOO_LONG,
-    TOOL_ALREADY_EXISTS, DIRECTORY_NOT_FOUND, PATH_NOT_DIRECTORY
-)
 
 
 def _validate_tool_name(name: str) -> None:
@@ -20,13 +16,13 @@ def _validate_tool_name(name: str) -> None:
         ValueError: If tool name is invalid
     """
     if not name:
-        raise ValueError(TOOL_NAME_EMPTY)
+        raise ValueError("Tool name cannot be empty")
     
     if not re.match(r'^[a-zA-Z0-9_-]+$', name):
-        raise ValueError(TOOL_NAME_INVALID_CHARS)
+        raise ValueError("Tool name can only contain letters, numbers, hyphens (-), and underscores (_)")
     
     if len(name) > 64:
-        raise ValueError(TOOL_NAME_TOO_LONG)
+        raise ValueError("Tool name must be 64 characters or less")
 
 
 def add_tool(
@@ -68,7 +64,7 @@ def add_tool(
     # Check for duplicate tool name
     existing_tool = get_tool_by_name(db_conn, name)
     if existing_tool is not None:
-        raise ValueError(TOOL_ALREADY_EXISTS.format(name))
+        raise ValueError(f"Tool '{name}' already exists")
     
     # Add tool
     cursor = db_conn.execute(
@@ -216,17 +212,17 @@ def delete_tool(db_conn: DatabaseConnection, name: str) -> bool:
     Returns:
         Whether deletion was successful
     """
-    # ツールの存在確認
+    # Check tool existence
     tool = get_tool_by_name(db_conn, name)
     if tool is None:
         return False
     
     tool_id = tool["id"]
     
-    # ツール用テーブル削除
+    # Drop tool tables
     drop_tool_tables(db_conn, tool_id)
     
-    # ツール削除
+    # Delete tool
     db_conn.execute("DELETE FROM tools WHERE name = ?", (name,))
     db_conn.commit()
     
