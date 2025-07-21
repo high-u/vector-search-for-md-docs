@@ -1,0 +1,9 @@
+[database]
+path = "vector-db.sqlite"
+
+[chunking]
+size = 1024
+overlap = 64
+
+[display]
+default_format = "table"
