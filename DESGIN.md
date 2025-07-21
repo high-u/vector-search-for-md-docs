@@ -52,6 +52,7 @@ CREATE TABLE tools (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,           -- ツール名
     description TEXT NOT NULL,           -- LLMへの説明
+    source_directory TEXT NOT NULL,      -- 取り込み元ディレクトリ（絶対パス）
     is_active BOOLEAN DEFAULT 1,         -- 有効/無効フラグ
     app_version TEXT,                    -- アプリバージョン
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -68,9 +69,11 @@ CREATE TABLE tools (
 CREATE TABLE documents_{tool_name} (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tool_id INTEGER NOT NULL,
-    file_path TEXT NOT NULL,             -- ファイルパス
+    file_path TEXT NOT NULL,             -- source_directoryからの相対パス
+    content_hash TEXT NOT NULL,          -- ファイル内容のハッシュ値（差分更新用）
     content TEXT NOT NULL,               -- ファイル全内容
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
 );
 
@@ -99,6 +102,10 @@ ON vectors_{tool_name} (tool_id, document_id);
 CREATE INDEX idx_documents_{tool_name}_tool
 ON documents_{tool_name} (tool_id);
 
+-- ハッシュ値による重複チェック用インデックス
+CREATE UNIQUE INDEX idx_documents_{tool_name}_path_hash
+ON documents_{tool_name} (tool_id, file_path, content_hash);
+
 -- 位置検索用インデックス
 CREATE INDEX idx_vectors_{tool_name}_position
 ON vectors_{tool_name} (document_id, start_position, end_position);
@@ -114,15 +121,15 @@ ON vectors_{tool_name} (document_id, start_position, end_position);
 
 #### ツール追加
 
-- `mdvec tool add --name <tool-name> --description <description>`
-- `mdvec tool add -n <tool-name> -d <description>`
+- `mdvec tool add --name <tool-name> --description <description> --source <directory>`
+- `mdvec tool add -n <tool-name> -d <description> -s <directory>`
 
-例: `mdvec tool add -n api-docs -d "API documentation for user authentication"`
+例: `mdvec tool add -n api-docs -d "API documentation for user authentication" -s ./docs/api`
 
 #### ツール更新
 
-- `mdvec tool update --name <tool-name> [--description <description>]`
-- `mdvec tool update -n <tool-name> [-d <description>]`
+- `mdvec tool update --name <tool-name> [--description <description>] [--source <directory>]`
+- `mdvec tool update -n <tool-name> [-d <description>] [-s <directory>]`
 
 #### ツール削除
 
@@ -156,8 +163,14 @@ ON vectors_{tool_name} (document_id, start_position, end_position);
 
 #### ドキュメント取り込み
 
-- `mdvec import --folder <source-directory> --name <tool-name> [options]`
-- `mdvec import -f <source-directory> -n <tool-name> [options]`
+- `mdvec import --name <tool-name> [--mode <mode>] [options]`
+- `mdvec import -n <tool-name> [-m <mode>] [options]`
+
+モード:
+
+- `--mode new` : 新規作成（デフォルト、ツールが存在する場合はエラー）
+- `--mode replace` : 完全再構築（既存データ削除→再構築）
+- `--mode update` : 差分更新（ファイルハッシュによる更新判定、存在しないファイルは削除）
 
 オプション:
 
@@ -167,10 +180,11 @@ ON vectors_{tool_name} (document_id, start_position, end_position);
 
 例:
 
-- `mdvec import -f ./docs/api -n api-docs`
-- `mdvec import -f /project/docs -n user-guides --database ./custom.sqlite`
+- `mdvec import -n api-docs` （デフォルト: --mode new）
+- `mdvec import -n api-docs --mode replace`
+- `mdvec import -n api-docs --mode update --database ./custom.sqlite`
 
-動作: サブディレクトリを常に再帰探索、指定データベースが存在しない場合は自動作成
+動作: ツールに設定されたsource_directoryを自動使用、サブディレクトリを常に再帰探索、指定データベースが存在しない場合は自動作成
 
 #### ステータス確認
 
