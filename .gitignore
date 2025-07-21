@@ -62,3 +62,6 @@ Pipfile.lock
 
 # Logs
 *.log
+
+# Claude Code
+.claude
