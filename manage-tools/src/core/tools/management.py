@@ -50,10 +50,8 @@ def add_tool(
         ValueError: If tool name is invalid or already exists
         FileNotFoundError: If source directory validation fails
     """
-    # Tool name validation
     _validate_tool_name(name)
     
-    # Directory validation
     is_valid, resolved_path, error_msg = validate_directory(source_directory)
     if not is_valid:
         if "does not exist" in error_msg:
@@ -61,12 +59,10 @@ def add_tool(
         else:
             raise ValueError(error_msg)
     
-    # Check for duplicate tool name
     existing_tool = get_tool_by_name(db_conn, name)
     if existing_tool is not None:
         raise ValueError(f"Tool '{name}' already exists")
     
-    # Add tool
     cursor = db_conn.execute(
         """
         INSERT INTO tools (name, description, source_directory, app_version)
@@ -77,7 +73,6 @@ def add_tool(
     
     tool_id = cursor.lastrowid
     
-    # Create tool tables
     create_tool_tables(db_conn, tool_id)
     
     db_conn.commit()
@@ -164,12 +159,10 @@ def update_tool(
     Raises:
         FileNotFoundError: If source directory validation fails
     """
-    # Check tool existence
     tool = get_tool_by_name(db_conn, name)
     if tool is None:
         return False
     
-    # Prepare update fields
     update_fields = []
     params = []
     
@@ -189,7 +182,7 @@ def update_tool(
         params.append(resolved_path)
     
     if not update_fields:
-        return True  # No fields to update
+        return True
     
     update_fields.append("updated_at = ?")
     params.append(datetime.now().isoformat())
@@ -212,17 +205,14 @@ def delete_tool(db_conn: DatabaseConnection, name: str) -> bool:
     Returns:
         Whether deletion was successful
     """
-    # Check tool existence
     tool = get_tool_by_name(db_conn, name)
     if tool is None:
         return False
     
     tool_id = tool["id"]
     
-    # Drop tool tables
     drop_tool_tables(db_conn, tool_id)
     
-    # Delete tool
     db_conn.execute("DELETE FROM tools WHERE name = ?", (name,))
     db_conn.commit()
     
