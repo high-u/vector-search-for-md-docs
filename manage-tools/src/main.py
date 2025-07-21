@@ -1,10 +1,9 @@
 import typer
-from pathlib import Path
-from typing import Optional
 
 from .utilities.config import load_config
 from .interfaces.database.connection import create_database_connection
 from .interfaces.database.schema import initialize_database
+from .interfaces.filesystem.validation import validate_directory_path
 from .core.tools.management import add_tool
 
 
@@ -14,36 +13,35 @@ app.add_typer(tool_app, name="tool")
 
 
 def create_dependencies(config_path: str = "config.toml"):
-    """依存関係を作成する"""
+    """Create dependencies"""
     config = load_config(config_path)
     db_conn = create_database_connection(config["database"]["path"])
     initialize_database(db_conn)
     return {
         "config": config,
-        "db_conn": db_conn
+        "db_conn": db_conn,
+        "validate_directory": validate_directory_path
     }
 
 
 @tool_app.command("add")
 def tool_add(
-    name: str = typer.Option(..., "--name", "-n", help="ツール名"),
-    description: str = typer.Option(..., "--description", "-d", help="ツールの説明"),
-    source: str = typer.Option(..., "--source", "-s", help="ソースディレクトリ"),
-    config_path: str = typer.Option("config.toml", "--config", help="設定ファイルのパス")
+    name: str = typer.Option(..., "--name", "-n", help="Tool name"),
+    description: str = typer.Option(..., "--description", "-d", help="Tool description"),
+    source: str = typer.Option(..., "--source", "-s", help="Source directory"),
+    config_path: str = typer.Option("config.toml", "--config", help="Configuration file path")
 ):
-    """新しいツールを追加する"""
+    """Add a new tool"""
     try:
         deps = create_dependencies(config_path)
-        
-        # ソースディレクトリを絶対パスに変換
-        source_path = Path(source).resolve()
         
         with deps["db_conn"] as db_conn:
             tool_id = add_tool(
                 db_conn=db_conn,
                 name=name,
                 description=description,
-                source_directory=str(source_path)
+                source_directory=source,
+                validate_directory=deps["validate_directory"]
             )
         
         typer.echo(f"Tool '{name}' added successfully with ID: {tool_id}")

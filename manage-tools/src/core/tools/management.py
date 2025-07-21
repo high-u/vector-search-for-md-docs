@@ -1,29 +1,32 @@
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable, Tuple
 from datetime import datetime
 import re
 
 from ...interfaces.database.connection import DatabaseConnection
 from ...interfaces.database.schema import create_tool_tables, drop_tool_tables
+from ..messages import (
+    TOOL_NAME_EMPTY, TOOL_NAME_INVALID_CHARS, TOOL_NAME_TOO_LONG,
+    TOOL_ALREADY_EXISTS, DIRECTORY_NOT_FOUND, PATH_NOT_DIRECTORY
+)
 
 
 def _validate_tool_name(name: str) -> None:
-    """ツール名のバリデーションを行う
+    """Validate tool name
     
     Args:
-        name: ツール名
+        name: Tool name to validate
         
     Raises:
-        ValueError: ツール名が無効な場合
+        ValueError: If tool name is invalid
     """
     if not name:
-        raise ValueError("Tool name cannot be empty")
+        raise ValueError(TOOL_NAME_EMPTY)
     
     if not re.match(r'^[a-zA-Z0-9_-]+$', name):
-        raise ValueError("Tool name can only contain letters, numbers, hyphens (-), and underscores (_)")
+        raise ValueError(TOOL_NAME_INVALID_CHARS)
     
     if len(name) > 64:
-        raise ValueError("Tool name must be 64 characters or less")
+        raise ValueError(TOOL_NAME_TOO_LONG)
 
 
 def add_tool(
@@ -31,51 +34,54 @@ def add_tool(
     name: str,
     description: str,
     source_directory: str,
+    validate_directory: Callable[[str], Tuple[bool, str, str]],
     app_version: Optional[str] = None
 ) -> int:
-    """新しいツールを追加する
+    """Add a new tool
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
-        description: ツールの説明
-        source_directory: ソースディレクトリ（絶対パス）
-        app_version: アプリバージョン
+        db_conn: Database connection
+        name: Tool name
+        description: Tool description
+        source_directory: Source directory path
+        validate_directory: Function to validate directory path
+        app_version: Application version
         
     Returns:
-        作成されたツールのID
+        Created tool ID
         
     Raises:
-        ValueError: ツール名が既に存在する場合や無効な場合
-        FileNotFoundError: ソースディレクトリが存在しない場合
+        ValueError: If tool name is invalid or already exists
+        FileNotFoundError: If source directory validation fails
     """
-    # ツール名のバリデーション
+    # Tool name validation
     _validate_tool_name(name)
     
-    # ソースディレクトリの存在確認
-    source_path = Path(source_directory).resolve()
-    if not source_path.exists():
-        raise FileNotFoundError(f"Source directory does not exist: {source_directory}")
-    if not source_path.is_dir():
-        raise ValueError(f"Source path is not a directory: {source_directory}")
+    # Directory validation
+    is_valid, resolved_path, error_msg = validate_directory(source_directory)
+    if not is_valid:
+        if "does not exist" in error_msg:
+            raise FileNotFoundError(error_msg)
+        else:
+            raise ValueError(error_msg)
     
-    # ツール名の重複確認
+    # Check for duplicate tool name
     existing_tool = get_tool_by_name(db_conn, name)
     if existing_tool is not None:
-        raise ValueError(f"Tool '{name}' already exists")
+        raise ValueError(TOOL_ALREADY_EXISTS.format(name))
     
-    # ツール追加
+    # Add tool
     cursor = db_conn.execute(
         """
         INSERT INTO tools (name, description, source_directory, app_version)
         VALUES (?, ?, ?, ?)
         """,
-        (name, description, str(source_path), app_version)
+        (name, description, resolved_path, app_version)
     )
     
     tool_id = cursor.lastrowid
     
-    # ツール用テーブル作成
+    # Create tool tables
     create_tool_tables(db_conn, tool_id)
     
     db_conn.commit()
@@ -83,14 +89,14 @@ def add_tool(
 
 
 def get_tool_by_name(db_conn: DatabaseConnection, name: str) -> Optional[Dict[str, Any]]:
-    """名前でツールを取得する
+    """Get tool by name
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
+        db_conn: Database connection
+        name: Tool name
         
     Returns:
-        ツール情報（存在しない場合はNone）
+        Tool information (None if not found)
     """
     cursor = db_conn.execute(
         "SELECT * FROM tools WHERE name = ?",
@@ -101,14 +107,14 @@ def get_tool_by_name(db_conn: DatabaseConnection, name: str) -> Optional[Dict[st
 
 
 def get_tool_by_id(db_conn: DatabaseConnection, tool_id: int) -> Optional[Dict[str, Any]]:
-    """IDでツールを取得する
+    """Get tool by ID
     
     Args:
-        db_conn: データベース接続
-        tool_id: ツールID
+        db_conn: Database connection
+        tool_id: Tool ID
         
     Returns:
-        ツール情報（存在しない場合はNone）
+        Tool information (None if not found)
     """
     cursor = db_conn.execute(
         "SELECT * FROM tools WHERE id = ?",
@@ -119,14 +125,14 @@ def get_tool_by_id(db_conn: DatabaseConnection, tool_id: int) -> Optional[Dict[s
 
 
 def list_tools(db_conn: DatabaseConnection, active_only: bool = False) -> List[Dict[str, Any]]:
-    """ツール一覧を取得する
+    """Get list of tools
     
     Args:
-        db_conn: データベース接続
-        active_only: 有効なツールのみ取得するかどうか
+        db_conn: Database connection
+        active_only: Whether to get only active tools
         
     Returns:
-        ツール一覧
+        List of tools
     """
     query = "SELECT * FROM tools"
     params = ()
@@ -143,29 +149,31 @@ def list_tools(db_conn: DatabaseConnection, active_only: bool = False) -> List[D
 def update_tool(
     db_conn: DatabaseConnection,
     name: str,
+    validate_directory: Callable[[str], Tuple[bool, str, str]],
     description: Optional[str] = None,
     source_directory: Optional[str] = None
 ) -> bool:
-    """ツール情報を更新する
+    """Update tool information
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
-        description: 新しい説明（Noneの場合は更新しない）
-        source_directory: 新しいソースディレクトリ（Noneの場合は更新しない）
+        db_conn: Database connection
+        name: Tool name
+        validate_directory: Function to validate directory path
+        description: New description (skip update if None)
+        source_directory: New source directory (skip update if None)
         
     Returns:
-        更新が成功したかどうか
+        Whether update was successful
         
     Raises:
-        FileNotFoundError: ソースディレクトリが存在しない場合
+        FileNotFoundError: If source directory validation fails
     """
-    # ツールの存在確認
+    # Check tool existence
     tool = get_tool_by_name(db_conn, name)
     if tool is None:
         return False
     
-    # 更新フィールドの準備
+    # Prepare update fields
     update_fields = []
     params = []
     
@@ -174,17 +182,18 @@ def update_tool(
         params.append(description)
     
     if source_directory is not None:
-        source_path = Path(source_directory).resolve()
-        if not source_path.exists():
-            raise FileNotFoundError(f"Source directory does not exist: {source_directory}")
-        if not source_path.is_dir():
-            raise ValueError(f"Source path is not a directory: {source_directory}")
+        is_valid, resolved_path, error_msg = validate_directory(source_directory)
+        if not is_valid:
+            if "does not exist" in error_msg:
+                raise FileNotFoundError(error_msg)
+            else:
+                raise ValueError(error_msg)
         
         update_fields.append("source_directory = ?")
-        params.append(str(source_path))
+        params.append(resolved_path)
     
     if not update_fields:
-        return True  # 更新する項目がない場合は成功とする
+        return True  # No fields to update
     
     update_fields.append("updated_at = ?")
     params.append(datetime.now().isoformat())
@@ -198,14 +207,14 @@ def update_tool(
 
 
 def delete_tool(db_conn: DatabaseConnection, name: str) -> bool:
-    """ツールを削除する
+    """Delete a tool
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
+        db_conn: Database connection
+        name: Tool name
         
     Returns:
-        削除が成功したかどうか
+        Whether deletion was successful
     """
     # ツールの存在確認
     tool = get_tool_by_name(db_conn, name)
@@ -225,41 +234,41 @@ def delete_tool(db_conn: DatabaseConnection, name: str) -> bool:
 
 
 def enable_tool(db_conn: DatabaseConnection, name: str) -> bool:
-    """ツールを有効化する
+    """Enable a tool
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
+        db_conn: Database connection
+        name: Tool name
         
     Returns:
-        有効化が成功したかどうか
+        Whether enabling was successful
     """
     return _set_tool_active_status(db_conn, name, True)
 
 
 def disable_tool(db_conn: DatabaseConnection, name: str) -> bool:
-    """ツールを無効化する
+    """Disable a tool
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
+        db_conn: Database connection
+        name: Tool name
         
     Returns:
-        無効化が成功したかどうか
+        Whether disabling was successful
     """
     return _set_tool_active_status(db_conn, name, False)
 
 
 def _set_tool_active_status(db_conn: DatabaseConnection, name: str, is_active: bool) -> bool:
-    """ツールの有効/無効状態を設定する
+    """Set tool active/inactive status
     
     Args:
-        db_conn: データベース接続
-        name: ツール名
-        is_active: 有効状態
+        db_conn: Database connection
+        name: Tool name
+        is_active: Active status
         
     Returns:
-        設定が成功したかどうか
+        Whether setting status was successful
     """
     tool = get_tool_by_name(db_conn, name)
     if tool is None:
