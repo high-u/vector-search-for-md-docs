@@ -19,7 +19,7 @@
   │   ├── tests/
   │   └── pyproject.toml
   │
-  ├── manage-documents/             # ドキュメント管理アプリ
+  ├── manage-tools/             # ドキュメント管理アプリ
   │   ├── src/
   │   │   ├── interfaces/           # I/O層・外部境界
   │   │   │   ├── database/         # DB接続・スキーマ管理
